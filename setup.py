@@ -149,6 +149,15 @@ def main():
 ╚═══════════════════════════════════════════════════════════╝
     """)
     
+    if not sys.stdin.isatty():
+        print("⚠️  Running in non-interactive mode (deployment environment)")
+        print("✅ Skipping interactive setup - use environment variables instead")
+        create_directories()
+        create_gitignore()
+        print("\n✅ Non-interactive setup completed")
+        print("💡 Configure bot using environment variables in Render dashboard")
+        return
+    
     try:
         create_env_file()
         
