@@ -30,7 +30,7 @@ class TemporaryHostingManager:
         self.session_timeout = 900  # 15 minutes in seconds
         
     async def create_temporary_hosting(self, user_id, username, is_owner=False, is_admin=False):
-        """Create temporary hosting with auto-expiry"""
+        """Create permanent hosting for admin-only bot"""
         
         # Generate unique credentials
         session_id = secrets.token_urlsafe(16)
@@ -39,16 +39,9 @@ class TemporaryHostingManager:
         # Get public URL from hosting detector
         public_url = hosting.get_config()['full_url']
         
-        # Owner & Admin = Unlimited session, Free users = 15 min
-        if is_owner:
-            expires_at = datetime.now() + timedelta(days=365)  # 1 year for owner
-            session_type = "UNLIMITED"
-        elif is_admin:
-            expires_at = datetime.now() + timedelta(hours=24)  # 24 hours for admin
-            session_type = "EXTENDED"
-        else:
-            expires_at = datetime.now() + timedelta(seconds=self.session_timeout)  # 15 min for users
-            session_type = "TEMPORARY"
+        # All admins get unlimited session (admin-only bot)
+        expires_at = datetime.now() + timedelta(days=3650)  # 10 years (permanent)
+        session_type = "UNLIMITED" if is_owner else "ADMIN"
         
         # Create session
         session_data = {
@@ -68,9 +61,8 @@ class TemporaryHostingManager:
         
         self.active_sessions[user_id] = session_data
         
-        # Start auto-cleanup task (but skip for owner)
-        if not is_owner:
-            asyncio.create_task(self.monitor_session(user_id))
+        # No auto-cleanup for admin-only bot - all sessions are permanent
+        # asyncio.create_task(self.monitor_session(user_id))
         
         return session_data
     
@@ -202,29 +194,35 @@ hosting_manager = TemporaryHostingManager()
 async def create_user_hosting(user_id, username, is_owner=False, is_admin=False):
     """Create temporary hosting for user"""
     
+    # Import here to avoid circular dependency
+    from web_dashboard import create_user_panel
+    
+    # Create web panel with valid token
+    panel_data = create_user_panel(user_id, username)
+    
     session = await hosting_manager.create_temporary_hosting(user_id, username, is_owner, is_admin)
+    
+    # Override session_id with valid access_token
+    session['session_id'] = panel_data['access_token']
     
     # Get hosting info
     host_info = get_hosting_info()
     
     # Different messages based on user type
     if is_owner:
-        duration_text = "♾️ <b>UNLIMITED</b> (Never Expires)"
-        note_text = "• 👑 Owner privilege - Unlimited access\n• No inactivity timeout\n• Session never expires"
-    elif is_admin:
-        duration_text = "⏰ <b>24 Hours</b> (Extended)"
-        note_text = "• 👨‍💼 Admin privilege - Extended session\n• No inactivity timeout\n• Auto-renews on activity"
+        duration_text = "♾️ <b>UNLIMITED</b> (Permanent Access)"
+        note_text = "• 👑 Owner privilege - Permanent access\n• No expiry or timeout\n• Session always active"
     else:
-        duration_text = "⏱️ <b>15 Minutes</b> (Free)"
-        note_text = "• Session auto-expires after <b>15 min inactivity</b>\n• Click '🔄 Extend' to add 15 more minutes\n• Upgrade to Premium for longer sessions"
+        duration_text = "♾️ <b>UNLIMITED</b> (Permanent Access)"
+        note_text = "• 👨‍💼 Admin privilege - Permanent session\n• No expiry or timeout\n• Session always active"
     
     # Format message
     message = f"""
 ╔═══════════════════════════════════╗
-    🌐 <b>FILE MANAGER IS READY!</b> 🌐
+    🌐 <b>WEB PANEL IS READY!</b> 🌐
 ╚═══════════════════════════════════╝
 
-<b>✨ Your {'Unlimited' if is_owner else 'Extended' if is_admin else 'Temporary'} Hosting Created!</b>
+<b>✨ Your Permanent Hosting Created!</b>
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 <b>🔗 ACCESS URL:</b>
@@ -244,7 +242,7 @@ async def create_user_hosting(user_id, username, is_owner=False, is_admin=False)
 
 ⏱️ <b>Duration:</b> {duration_text}
 🕒 <b>Created:</b> {session['created_at'].strftime('%H:%M:%S')}
-⚡ <b>Status:</b> 🟢 Active
+⚡ <b>Status:</b> 🟢 Always Active
 🏷️ <b>Type:</b> {session['session_type']}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -272,7 +270,7 @@ async def create_user_hosting(user_id, username, is_owner=False, is_admin=False)
 📊 Analytics dashboard
 💾 Auto-save enabled
 
-<b>🎊 Your hosting is LIVE now!</b>
+<b>🎊 Your panel is LIVE permanently!</b>
 """
     
     return {
