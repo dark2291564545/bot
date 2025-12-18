@@ -2964,6 +2964,32 @@ No active share links found.
 
 bot_start_time = datetime.now()
 
+async def keep_alive():
+    """Keep Render service alive by self-pinging"""
+    import aiohttp
+    
+    config = hosting.get_config()
+    base_url = config['base_url']
+    
+    # Only run on production (not local)
+    if not config['is_production']:
+        return
+    
+    logger.info("🔄 Keep-alive service started")
+    
+    while True:
+        try:
+            await asyncio.sleep(840)  # 14 minutes (Render timeout is 15 min)
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(f"{base_url}/health", timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status == 200:
+                        logger.info("✅ Keep-alive ping successful")
+                    else:
+                        logger.warning(f"⚠️ Keep-alive ping failed: {resp.status}")
+        except Exception as e:
+            logger.error(f"❌ Keep-alive error: {e}")
+
 async def main():
     logger.info("🚀 Starting Advanced File Host Bot...")
     logger.info("💫 MADE BY DARK SHADOW 💫")
@@ -2973,6 +2999,7 @@ async def main():
     asyncio.create_task(web_server())
     asyncio.create_task(schedule_auto_backup())
     asyncio.create_task(cleanup_old_scripts())
+    asyncio.create_task(keep_alive())  # Keep service alive
     
     await dp.start_polling(bot)
 
