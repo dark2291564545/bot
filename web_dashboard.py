@@ -9,6 +9,8 @@ import secrets
 import hashlib
 import json
 import sqlite3
+import subprocess
+import sys
 from pathlib import Path
 from datetime import datetime, timedelta
 from aiohttp import web
@@ -143,6 +145,9 @@ async def create_web_dashboard():
         if (user_folder / 'uploads').exists():
             for file in (user_folder / 'uploads').iterdir():
                 if file.is_file():
+                    # Hide sensitive files from file list
+                    if file.name in ['.env', '.env.local', 'config.json']:
+                        continue
                     files.append({
                         'name': file.name,
                         'size': file.stat().st_size,
@@ -309,7 +314,7 @@ async def create_web_dashboard():
                 
                 <div style="margin-top: 20px;">
                     <button class="btn btn-primary" onclick="createProject()">➕ New Project</button>
-                    <button class="btn" onclick="deployProject()">🚀 Deploy</button>
+                    <button class="btn" onclick="showExecutor()">▶️ Run Code</button>
                 </div>
             </div>
             
@@ -325,6 +330,7 @@ async def create_web_dashboard():
                             </div>
                         </div>
                         <div>
+                            <button class="btn" onclick="runFile('{f['name']}')">▶️ Run</button>
                             <button class="btn" onclick="editFile('{f['name']}')">✏️ Edit</button>
                             <button class="btn" onclick="deleteFile('{f['name']}')">🗑️ Delete</button>
                         </div>
@@ -375,6 +381,21 @@ async def create_web_dashboard():
         
         function deployProject() {{
             alert('🚀 Deploy feature coming soon!');
+        }}
+        
+        async function runFile(filename) {{
+            const response = await fetch('/api/execute/{token}/' + filename, {{ method: 'POST' }});
+            const result = await response.json();
+            
+            if (result.success) {{
+                alert('✅ Execution Output:\\n\\n' + result.output);
+            }} else {{
+                alert('❌ Execution Error:\\n\\n' + result.error);
+            }}
+        }}
+        
+        function showExecutor() {{
+            window.open('/executor/{token}', '_blank');
         }}
         
         // Drag and drop
@@ -448,6 +469,225 @@ async def create_web_dashboard():
             filepath.unlink()
             log_activity(user_id, 'file_delete', f'Deleted {filename}', request.remote)
             return web.json_response({'success': True})
+    
+    async def handle_code_execution(request):
+        token = request.match_info.get('token')
+        filename = request.match_info.get('filename')
+        user_data = verify_token(token)
+        
+        if not user_data:
+            return web.json_response({'error': 'Unauthorized'}, status=403)
+        
+        user_id, username = user_data
+        filepath = USERS_DIR / username / 'uploads' / filename
+        
+        if not filepath.exists():
+            return web.json_response({'success': False, 'error': 'File not found'}, status=404)
+        
+        try:
+            if filename.endswith('.py'):
+                result = subprocess.run(
+                    [sys.executable, str(filepath)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(filepath.parent)
+                )
+            elif filename.endswith('.js'):
+                result = subprocess.run(
+                    ['node', str(filepath)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(filepath.parent)
+                )
+            else:
+                return web.json_response({'success': False, 'error': 'Unsupported file type. Only .py and .js files can be executed.'})
+            
+            output = result.stdout if result.returncode == 0 else result.stderr
+            
+            log_activity(user_id, 'code_execution', f'Executed {filename}', request.remote)
+            
+            return web.json_response({
+                'success': result.returncode == 0,
+                'output': output,
+                'error': result.stderr if result.returncode != 0 else None,
+                'return_code': result.returncode
+            })
+            
+        except subprocess.TimeoutExpired:
+            return web.json_response({'success': False, 'error': 'Execution timeout (30 seconds)'})
+        except Exception as e:
+            return web.json_response({'success': False, 'error': str(e)})
+    
+    async def handle_code_executor_page(request):
+        token = request.match_info.get('token')
+        user_data = verify_token(token)
+        
+        if not user_data:
+            return web.Response(text="Unauthorized", status=403)
+        
+        executor_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Executor</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+        }}
+        .header {{
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }}
+        .executor-panel {{
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+        select, textarea, button {{
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+        }}
+        textarea {{
+            height: 300px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+        }}
+        button {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }}
+        button:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }}
+        .output {{
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            min-height: 150px;
+            white-space: pre-wrap;
+            margin-top: 20px;
+        }}
+        .error {{ color: #ff6b6b; }}
+        .success {{ color: #51cf66; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>▶️ Code Executor</h1>
+            <p style="opacity: 0.8; margin-top: 10px;">Write and run Python/JavaScript code instantly</p>
+        </div>
+        
+        <div class="executor-panel">
+            <h2>📝 Write Code</h2>
+            <select id="language">
+                <option value="python">Python (.py)</option>
+                <option value="javascript">JavaScript (.js)</option>
+            </select>
+            
+            <textarea id="code" placeholder="Write your code here...">print("Hello, World!")</textarea>
+            
+            <button onclick="executeCode()">▶️ Run Code</button>
+            
+            <h3 style="margin-top: 20px;">📊 Output:</h3>
+            <div id="output" class="output">Ready to execute...</div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('language').addEventListener('change', (e) => {{
+            const code = document.getElementById('code');
+            if (e.target.value === 'python') {{
+                code.value = 'print("Hello, World!")';
+            }} else {{
+                code.value = 'console.log("Hello, World!");';
+            }}
+        }});
+        
+        async function executeCode() {{
+            const code = document.getElementById('code').value;
+            const language = document.getElementById('language').value;
+            const output = document.getElementById('output');
+            
+            output.textContent = '⏳ Executing...';
+            output.className = 'output';
+            
+            try {{
+                const ext = language === 'python' ? 'py' : 'js';
+                const filename = `temp_${{Date.now()}}.${{ext}}`;
+                
+                // Save file first
+                const saveResponse = await fetch('/api/save/{token}/' + filename, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{content: code}})
+                }});
+                
+                if (!saveResponse.ok) {{
+                    throw new Error('Failed to save code');
+                }}
+                
+                // Execute
+                const execResponse = await fetch('/api/execute/{token}/' + filename, {{
+                    method: 'POST'
+                }});
+                
+                const result = await execResponse.json();
+                
+                if (result.success) {{
+                    output.textContent = '✅ Success:\\n\\n' + (result.output || '(No output)');
+                    output.className = 'output success';
+                }} else {{
+                    output.textContent = '❌ Error:\\n\\n' + (result.error || 'Unknown error');
+                    output.className = 'output error';
+                }}
+            }} catch (error) {{
+                output.textContent = '❌ Error:\\n\\n' + error.message;
+                output.className = 'output error';
+            }}
+        }}
+        
+        // Ctrl+Enter to run
+        document.getElementById('code').addEventListener('keydown', (e) => {{
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {{
+                e.preventDefault();
+                executeCode();
+            }}
+        }});
+    </script>
+</body>
+</html>
+        """
+        
+        return web.Response(text=executor_html, content_type='text/html')
         
         return web.json_response({'error': 'File not found'}, status=404)
     
@@ -547,10 +787,231 @@ async def create_web_dashboard():
         
         return web.json_response({'success': True})
     
+    async def handle_code_execution(request):
+        token = request.match_info.get('token')
+        filename = request.match_info.get('filename')
+        user_data = verify_token(token)
+        
+        if not user_data:
+            return web.json_response({'error': 'Unauthorized'}, status=403)
+        
+        user_id, username = user_data
+        filepath = USERS_DIR / username / 'uploads' / filename
+        
+        if not filepath.exists():
+            return web.json_response({'success': False, 'error': 'File not found'}, status=404)
+        
+        try:
+            if filename.endswith('.py'):
+                result = subprocess.run(
+                    [sys.executable, str(filepath)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(filepath.parent)
+                )
+            elif filename.endswith('.js'):
+                result = subprocess.run(
+                    ['node', str(filepath)],
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    cwd=str(filepath.parent)
+                )
+            else:
+                return web.json_response({'success': False, 'error': 'Unsupported file type. Only .py and .js files can be executed.'})
+            
+            output = result.stdout if result.returncode == 0 else result.stderr
+            
+            log_activity(user_id, 'code_execution', f'Executed {filename}', request.remote)
+            
+            return web.json_response({
+                'success': result.returncode == 0,
+                'output': output,
+                'error': result.stderr if result.returncode != 0 else None,
+                'return_code': result.returncode
+            })
+            
+        except subprocess.TimeoutExpired:
+            return web.json_response({'success': False, 'error': 'Execution timeout (30 seconds)'})
+        except Exception as e:
+            return web.json_response({'success': False, 'error': str(e)})
+    
+    async def handle_code_executor_page(request):
+        token = request.match_info.get('token')
+        user_data = verify_token(token)
+        
+        if not user_data:
+            return web.Response(text="Unauthorized", status=403)
+        
+        executor_html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Code Executor</title>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #fff;
+        }}
+        .container {{
+            max-width: 1200px;
+            margin: 0 auto;
+        }}
+        .header {{
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }}
+        .executor-panel {{
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(10px);
+            padding: 30px;
+            border-radius: 15px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }}
+        select, textarea, button {{
+            width: 100%;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            font-size: 16px;
+        }}
+        textarea {{
+            height: 300px;
+            font-family: 'Courier New', monospace;
+            resize: vertical;
+        }}
+        button {{
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }}
+        button:hover {{
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+        }}
+        .output {{
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 20px;
+            border-radius: 10px;
+            font-family: 'Courier New', monospace;
+            min-height: 150px;
+            white-space: pre-wrap;
+            margin-top: 20px;
+        }}
+        .error {{ color: #ff6b6b; }}
+        .success {{ color: #51cf66; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>▶️ Code Executor</h1>
+            <p style="opacity: 0.8; margin-top: 10px;">Write and run Python/JavaScript code instantly</p>
+        </div>
+        
+        <div class="executor-panel">
+            <h2>📝 Write Code</h2>
+            <select id="language">
+                <option value="python">Python (.py)</option>
+                <option value="javascript">JavaScript (.js)</option>
+            </select>
+            
+            <textarea id="code" placeholder="Write your code here...">print("Hello, World!")</textarea>
+            
+            <button onclick="executeCode()">▶️ Run Code</button>
+            
+            <h3 style="margin-top: 20px;">📊 Output:</h3>
+            <div id="output" class="output">Ready to execute...</div>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('language').addEventListener('change', (e) => {{
+            const code = document.getElementById('code');
+            if (e.target.value === 'python') {{
+                code.value = 'print("Hello, World!")';
+            }} else {{
+                code.value = 'console.log("Hello, World!");';
+            }}
+        }});
+        
+        async function executeCode() {{
+            const code = document.getElementById('code').value;
+            const language = document.getElementById('language').value;
+            const output = document.getElementById('output');
+            
+            output.textContent = '⏳ Executing...';
+            output.className = 'output';
+            
+            try {{
+                const ext = language === 'python' ? 'py' : 'js';
+                const filename = `temp_${{Date.now()}}.${{ext}}`;
+                
+                // Save file first
+                const saveResponse = await fetch('/api/save/{token}/' + filename, {{
+                    method: 'POST',
+                    headers: {{'Content-Type': 'application/json'}},
+                    body: JSON.stringify({{content: code}})
+                }});
+                
+                if (!saveResponse.ok) {{
+                    throw new Error('Failed to save code');
+                }}
+                
+                // Execute
+                const execResponse = await fetch('/api/execute/{token}/' + filename, {{
+                    method: 'POST'
+                }});
+                
+                const result = await execResponse.json();
+                
+                if (result.success) {{
+                    output.textContent = '✅ Success:\\n\\n' + (result.output || '(No output)');
+                    output.className = 'output success';
+                }} else {{
+                    output.textContent = '❌ Error:\\n\\n' + (result.error || 'Unknown error');
+                    output.className = 'output error';
+                }}
+            }} catch (error) {{
+                output.textContent = '❌ Error:\\n\\n' + error.message;
+                output.className = 'output error';
+            }}
+        }}
+        
+        // Ctrl+Enter to run
+        document.getElementById('code').addEventListener('keydown', (e) => {{
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {{
+                e.preventDefault();
+                executeCode();
+            }}
+        }});
+    </script>
+</body>
+</html>
+        """
+        
+        return web.Response(text=executor_html, content_type='text/html')
+    
     app.router.add_get('/panel/{token}', handle_panel_access)
     app.router.add_post('/api/upload/{token}', handle_file_upload)
     app.router.add_delete('/api/delete/{token}/{filename}', handle_file_delete)
     app.router.add_get('/editor/{token}/{filename}', handle_code_editor)
     app.router.add_post('/api/save/{token}/{filename}', handle_file_save)
+    app.router.add_post('/api/execute/{token}/{filename}', handle_code_execution)
+    app.router.add_get('/executor/{token}', handle_code_executor_page)
     
     return app
