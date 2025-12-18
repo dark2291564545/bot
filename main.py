@@ -1027,19 +1027,6 @@ async def callback_check_session_status(callback: types.CallbackQuery):
 @dp.callback_query(F.data == "noop")
 async def callback_noop(callback: types.CallbackQuery):
     await callback.answer()
-1 Year: $40 (Save 33%)
-
-━━━━━━━━━━━━━━━━━━━━
-<b>Contact owner to upgrade! 💬</b>
-"""
-    
-    back_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💬 Contact Owner", url=f"https://t.me/{YOUR_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="back_to_main")]
-    ])
-    
-    await callback.message.edit_text(text, reply_markup=back_keyboard, parse_mode="HTML")
-    await callback.answer()
 
 @dp.callback_query(F.data == "admin_panel")
 async def callback_admin_panel(callback: types.CallbackQuery):
