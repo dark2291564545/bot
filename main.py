@@ -2644,29 +2644,24 @@ async def web_server():
     main_app.router.add_get('/health', handle_health)
     main_app.router.add_get('/stats', handle_stats)
     
-    main_app.add_subapp('', dashboard_app)
+    # Mount dashboard routes under /panel prefix
+    for route in dashboard_app.router.routes():
+        main_app.router.add_route(route.method, route.resource.canonical, route.handler)
     
     config = hosting.get_config()
     bind_address = config['bind_address']
-    api_port = config['port']
-    dashboard_port = config.get('dashboard_port', 8080)
+    port = config['port']
     base_url = config['base_url']
     
     runner = web.AppRunner(main_app)
     await runner.setup()
     
-    site1 = web.TCPSite(runner, bind_address, api_port)
-    await site1.start()
-    logger.info(f"🌐 API Server started on {bind_address}:{api_port}")
+    site = web.TCPSite(runner, bind_address, port)
+    await site.start()
+    logger.info(f"🌐 Web Server started on {bind_address}:{port}")
     logger.info(f"📊 Health: {base_url}/health")
     logger.info(f"📈 Stats: {base_url}/stats")
-    
-    dashboard_runner = web.AppRunner(dashboard_app)
-    await dashboard_runner.setup()
-    site2 = web.TCPSite(dashboard_runner, bind_address, dashboard_port)
-    await site2.start()
-    logger.info(f"🎨 Dashboard Server started on {bind_address}:{dashboard_port}")
-    logger.info(f"🌐 Panel Access: {base_url.replace(str(api_port), str(dashboard_port))}/panel/{{token}}")
+    logger.info(f"🎨 Panel: {base_url}/panel/{{token}}")
 
 @dp.callback_query(F.data.startswith("share_file:"))
 async def callback_share_file(callback: types.CallbackQuery):
