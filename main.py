@@ -26,7 +26,7 @@ from hosting_detector import hosting, print_startup_info
 from file_sharing import share_manager
 from code_formatter import code_formatter
 from advanced_search import create_search_instance
-from web_panel_live import create_web_panel_app
+from live_panel_complete import create_live_panel_app
 
 if __name__ == "__main__":
     print("❌ Direct execution not allowed!")
@@ -2642,12 +2642,12 @@ async def cleanup_old_scripts():
             logger.error(f"Cleanup error: {e}")
 
 async def web_server():
-    from web_panel_live import WebPanel
+    from live_panel_complete import create_live_panel_app
     
     main_app = web.Application()
     
     dashboard_app = await create_web_dashboard()
-    live_panel = WebPanel(BASE_DIR)
+    live_panel, live_panel_app = create_live_panel_app(BASE_DIR)
     
     async def handle_root(request):
         uptime = (datetime.now() - bot_start_time).total_seconds()
@@ -2711,17 +2711,9 @@ async def web_server():
     for route in dashboard_app.router.routes():
         main_app.router.add_route(route.method, route.resource.canonical, route.handler)
     
-    # Mount live panel routes directly
-    main_app.router.add_get('/live', live_panel.handle_panel_html)
-    main_app.router.add_get('/live/', live_panel.handle_panel_html)
-    main_app.router.add_get('/api/install-deps/{user_id}', live_panel.handle_install_deps)
-    main_app.router.add_post('/api/upload-requirements', live_panel.handle_upload_requirements)
-    main_app.router.add_post('/api/upload-env', live_panel.handle_upload_env)
-    main_app.router.add_post('/api/read-file', live_panel.handle_read_file)
-    main_app.router.add_post('/api/run-code', live_panel.handle_run_code)
-    main_app.router.add_post('/api/stop-process', live_panel.handle_stop_process)
-    main_app.router.add_get('/api/view-logs', live_panel.handle_view_logs)
-    main_app.router.add_post('/api/terminal', live_panel.handle_terminal_command)
+    # Mount live panel routes
+    for route in live_panel_app.router.routes():
+        main_app.router.add_route(route.method, route.resource.canonical, route.handler)
     
     config = hosting.get_config()
     bind_address = config['bind_address']
