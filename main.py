@@ -2642,10 +2642,12 @@ async def cleanup_old_scripts():
             logger.error(f"Cleanup error: {e}")
 
 async def web_server():
+    from web_panel_live import WebPanel
+    
     main_app = web.Application()
     
     dashboard_app = await create_web_dashboard()
-    live_panel_app = create_web_panel_app(BASE_DIR)
+    live_panel = WebPanel(BASE_DIR)
     
     async def handle_root(request):
         uptime = (datetime.now() - bot_start_time).total_seconds()
@@ -2705,13 +2707,21 @@ async def web_server():
     main_app.router.add_get('/health', handle_health)
     main_app.router.add_get('/stats', handle_stats)
     
-    # Mount dashboard routes under /panel prefix
+    # Mount dashboard routes
     for route in dashboard_app.router.routes():
         main_app.router.add_route(route.method, route.resource.canonical, route.handler)
     
-    # Mount live panel routes under /live prefix
-    for route in live_panel_app.router.routes():
-        main_app.router.add_route(route.method, '/live' + str(route.resource.canonical), route.handler)
+    # Mount live panel routes directly
+    main_app.router.add_get('/live', live_panel.handle_panel_html)
+    main_app.router.add_get('/live/', live_panel.handle_panel_html)
+    main_app.router.add_get('/api/install-deps/{user_id}', live_panel.handle_install_deps)
+    main_app.router.add_post('/api/upload-requirements', live_panel.handle_upload_requirements)
+    main_app.router.add_post('/api/upload-env', live_panel.handle_upload_env)
+    main_app.router.add_post('/api/read-file', live_panel.handle_read_file)
+    main_app.router.add_post('/api/run-code', live_panel.handle_run_code)
+    main_app.router.add_post('/api/stop-process', live_panel.handle_stop_process)
+    main_app.router.add_get('/api/view-logs', live_panel.handle_view_logs)
+    main_app.router.add_post('/api/terminal', live_panel.handle_terminal_command)
     
     config = hosting.get_config()
     bind_address = config['bind_address']
@@ -2728,6 +2738,11 @@ async def web_server():
     logger.info(f"📈 Stats: {base_url}/stats")
     logger.info(f"🎨 Panel: {base_url}/panel/{{token}}")
     logger.info(f"🚀 Live Panel: {base_url}/live")
+    
+    # Debug: Log all registered routes
+    logger.info("📋 Registered Routes:")
+    for route in main_app.router.routes():
+        logger.info(f"  {route.method:6} {route.resource.canonical}")
 
 @dp.callback_query(F.data.startswith("share_file:"))
 async def callback_share_file(callback: types.CallbackQuery):
