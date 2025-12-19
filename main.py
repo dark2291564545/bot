@@ -26,6 +26,7 @@ from hosting_detector import hosting, print_startup_info
 from file_sharing import share_manager
 from code_formatter import code_formatter
 from advanced_search import create_search_instance
+from web_panel_live import create_web_panel_app
 
 if __name__ == "__main__":
     print("❌ Direct execution not allowed!")
@@ -2432,6 +2433,65 @@ async def cmd_get_panel(message: types.Message):
         logger.error(f"Panel creation error: {e}")
         await message.answer(f"❌ Error creating panel: {str(e)}")
 
+@dp.message(Command("live"))
+async def cmd_live_panel(message: types.Message):
+    user_id = message.from_user.id
+    
+    if user_id not in admin_ids:
+        await message.answer("🔒 <b>Admin Only Command</b>\n\n<i>💫 MADE BY DARK SHADOW 💫</i>", parse_mode="HTML")
+        return
+    
+    config = hosting.get_config()
+    base_url = config['base_url']
+    live_panel_url = f"{base_url}/live"
+    
+    text = f"""
+╔═══════════════════════╗
+    🚀 <b>LIVE CONTROL PANEL</b> 🚀
+╚═══════════════════════╝
+
+<b>🔗 Panel URL:</b>
+<code>{live_panel_url}</code>
+
+<b>✨ Features:</b>
+
+📦 <b>Dependencies Manager</b>
+   • One-click install all dependencies
+   • Upload requirements.txt
+   • Edit requirements.txt online
+
+⚙️ <b>.env File Manager</b>
+   • Edit .env file in browser
+   • Save configuration instantly
+
+▶️ <b>Code Runner</b>
+   • Run Python/JavaScript files
+   • View live output
+   • Stop running processes
+
+💻 <b>Terminal Access</b>
+   • Execute commands
+   • View real-time output
+   • Safe command blocking
+
+📋 <b>Logs Viewer</b>
+   • Real-time bot logs
+   • Auto-refresh every 5 seconds
+
+━━━━━━━━━━━━━━━━━━━━
+<b>🔐 Security:</b> Admin-only access
+<b>🌐 Platform:</b> {config['platform']}
+
+<i>💫 MADE BY DARK SHADOW 💫</i>
+"""
+    
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Open Live Panel", url=live_panel_url)],
+        [InlineKeyboardButton(text="🏠 Main Menu", callback_data="back_to_main")]
+    ])
+    
+    await message.answer(text, parse_mode="HTML", reply_markup=keyboard)
+
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
     user_id = message.from_user.id
@@ -2585,6 +2645,7 @@ async def web_server():
     main_app = web.Application()
     
     dashboard_app = await create_web_dashboard()
+    live_panel_app = create_web_panel_app(BASE_DIR)
     
     async def handle_root(request):
         uptime = (datetime.now() - bot_start_time).total_seconds()
@@ -2648,6 +2709,10 @@ async def web_server():
     for route in dashboard_app.router.routes():
         main_app.router.add_route(route.method, route.resource.canonical, route.handler)
     
+    # Mount live panel routes under /live prefix
+    for route in live_panel_app.router.routes():
+        main_app.router.add_route(route.method, '/live' + str(route.resource.canonical), route.handler)
+    
     config = hosting.get_config()
     bind_address = config['bind_address']
     port = config['port']
@@ -2662,6 +2727,7 @@ async def web_server():
     logger.info(f"📊 Health: {base_url}/health")
     logger.info(f"📈 Stats: {base_url}/stats")
     logger.info(f"🎨 Panel: {base_url}/panel/{{token}}")
+    logger.info(f"🚀 Live Panel: {base_url}/live")
 
 @dp.callback_query(F.data.startswith("share_file:"))
 async def callback_share_file(callback: types.CallbackQuery):
