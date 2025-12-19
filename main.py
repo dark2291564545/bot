@@ -2703,17 +2703,21 @@ async def web_server():
         
         return web.json_response(stats_data)
     
-    main_app.router.add_get('/', handle_root)
-    main_app.router.add_get('/health', handle_health)
-    main_app.router.add_get('/stats', handle_stats)
+    # Mount live panel routes FIRST (priority)
+    for route in live_panel_app.router.routes():
+        path = route.resource.canonical
+        main_app.router.add_route(route.method, path, route.handler)
+        logger.info(f"✅ Live Panel Route: {route.method} {path}")
     
     # Mount dashboard routes
     for route in dashboard_app.router.routes():
-        main_app.router.add_route(route.method, route.resource.canonical, route.handler)
+        path = route.resource.canonical
+        main_app.router.add_route(route.method, path, route.handler)
     
-    # Mount live panel routes
-    for route in live_panel_app.router.routes():
-        main_app.router.add_route(route.method, route.resource.canonical, route.handler)
+    # Main routes
+    main_app.router.add_get('/', handle_root)
+    main_app.router.add_get('/health', handle_health)
+    main_app.router.add_get('/stats', handle_stats)
     
     config = hosting.get_config()
     bind_address = config['bind_address']
