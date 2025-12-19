@@ -103,6 +103,7 @@ UPDATE_CHANNEL=https://t.me/DARK22v
 /help       - Help & info
 /stats      - Your statistics
 /panel      - Get web panel
+/live       - Live Control Panel (NEW!)
 /search     - Smart search
 /myshares   - View share links
 
@@ -113,6 +114,40 @@ Admin Only:
 /unban       - Unban user
 /broadcast   - Send message to all
 ```
+
+---
+
+## 🚀 NEW! Live Control Panel
+
+Access via `/live` command for:
+
+### 📦 Dependencies Manager
+- ✅ One-click install all dependencies
+- ✅ Upload requirements.txt file
+- ✅ Edit requirements.txt in browser
+- ✅ View installation output live
+
+### ⚙️ .env File Manager  
+- ✅ Edit .env in browser
+- ✅ Save instantly
+- ✅ No need to access server
+
+### ▶️ Code Runner
+- ✅ Run Python/JS files from web
+- ✅ View live output
+- ✅ Stop running processes
+- ✅ 30-second timeout protection
+
+### 💻 Terminal Access
+- ✅ Execute shell commands
+- ✅ Real-time output
+- ✅ Dangerous commands blocked
+- ✅ Safe sandbox execution
+
+### 📋 Real-time Logs
+- ✅ View bot logs live
+- ✅ Auto-refresh every 5 seconds
+- ✅ Last 100 lines shown
 
 ---
 
