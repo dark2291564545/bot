@@ -31,6 +31,14 @@ class LivePanel:
     async def handle_file_upload(self, request):
         """Handle file upload from web panel"""
         try:
+            # Verify content type
+            content_type = request.headers.get('Content-Type', '')
+            if not content_type.startswith('multipart/form-data'):
+                return web.json_response({
+                    'success': False,
+                    'error': 'Invalid content type. Use multipart/form-data'
+                }, status=400)
+            
             reader = await request.multipart()
             user_id = None
             uploaded_files = []
@@ -48,7 +56,7 @@ class LivePanel:
                         user_id = 'default'
                     
                     user_folder = self.upload_dir / str(user_id)
-                    user_folder.mkdir(exist_ok=True)
+                    user_folder.mkdir(parents=True, exist_ok=True)
                     
                     # Save file
                     file_path = user_folder / filename
@@ -67,6 +75,12 @@ class LivePanel:
                         'path': str(file_path)
                     })
             
+            if not uploaded_files:
+                return web.json_response({
+                    'success': False,
+                    'error': 'No files uploaded'
+                }, status=400)
+            
             return web.json_response({
                 'success': True,
                 'message': f'✅ Uploaded {len(uploaded_files)} file(s)',
@@ -74,10 +88,13 @@ class LivePanel:
             })
         
         except Exception as e:
+            import traceback
+            error_detail = traceback.format_exc()
+            print(f"Upload error: {error_detail}")
             return web.json_response({
                 'success': False,
-                'error': str(e)
-            })
+                'error': f'Server error: {str(e)}'
+            }, status=500)
     
     async def handle_list_files(self, request):
         """List all uploaded files"""
@@ -796,6 +813,12 @@ UPDATE_CHANNEL=https://t.me/DARK22v"></textarea>
                     body: formData
                 });
                 
+                // Check content type
+                const contentType = response.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    throw new Error('Server returned non-JSON response. Check if API routes are properly registered.');
+                }
+                
                 const data = await response.json();
                 spinner.style.display = 'none';
                 
@@ -806,11 +829,12 @@ UPDATE_CHANNEL=https://t.me/DARK22v"></textarea>
                         loadFiles();
                     }, 1000);
                 } else {
-                    showStatus('uploadStatus', '❌ ' + data.error, 'error');
+                    showStatus('uploadStatus', '❌ ' + (data.error || 'Upload failed'), 'error');
                 }
             } catch (error) {
                 spinner.style.display = 'none';
                 showStatus('uploadStatus', '❌ Upload failed: ' + error.message, 'error');
+                console.error('Upload error:', error);
             }
         }
         
@@ -1124,27 +1148,40 @@ def create_live_panel_app(base_dir):
     panel = LivePanel(base_dir)
     app = web.Application()
     
-    # HTML
+    # CORS middleware for API requests
+    @web.middleware
+    async def cors_middleware(request, handler):
+        if request.method == "OPTIONS":
+            response = web.Response()
+        else:
+            try:
+                response = await handler(request)
+            except Exception as e:
+                return web.json_response({
+                    'success': False,
+                    'error': str(e)
+                }, status=500)
+        
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+        return response
+    
+    app.middlewares.append(cors_middleware)
+    
+    # HTML pages
     app.router.add_get('/', panel.handle_panel_html)
     app.router.add_get('/live', panel.handle_panel_html)
     
-    # File operations
+    # API endpoints with explicit /api/ prefix
     app.router.add_post('/api/upload-file', panel.handle_file_upload)
     app.router.add_get('/api/list-files/{user_id}', panel.handle_list_files)
     app.router.add_post('/api/delete-file', panel.handle_delete_file)
     app.router.add_post('/api/read-file', panel.handle_read_file)
     app.router.add_post('/api/save-file', panel.handle_save_file)
-    
-    # Code execution
     app.router.add_post('/api/run-code', panel.handle_run_code)
-    
-    # Dependencies
     app.router.add_get('/api/install-deps', panel.handle_install_deps)
-    
-    # Terminal
     app.router.add_post('/api/terminal', panel.handle_terminal)
-    
-    # Logs
     app.router.add_get('/api/view-logs', panel.handle_view_logs)
     
     return panel, app
